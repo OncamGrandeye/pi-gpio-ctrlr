@@ -41,6 +41,7 @@ socket.on('status', function(data) {
 
 <script type="text/ng-template" id="ioctrl.htm">
   <p> IO Controller View </p>
+  <p> Read {{pins.length}} PINS from server </p>
   <p><input type="checkbox" id="pin4">Socket Control</p>
   <div ng-repeat="input in inputs" digital-input></div>
 </script>

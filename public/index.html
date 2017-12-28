@@ -12,49 +12,7 @@
 <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.4/angular.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/angular-ui-bootstrap/0.9.0/ui-bootstrap-tpls.min.js"></script>
 <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.4/angular-route.min.js"></script>
-
-
-<script>
-  var app = angular.module('app', ['ngRoute']);
-
-  app.config(function($routeProvider, $locationProvider) {
-    // According to someone on the web, this next line does some "magic"
-    $locationProvider.hashPrefix('');
-    $routeProvider
-        .when('/',       { templateUrl:'ioctrl.htm', controller:'ioctrl' })
-        .when('/config', { templateUrl:'config.htm', controller:'config' })
-        .otherwise({redirectTo:'/'});
-  });
-
-
-  app.controller('navctrl', ['$scope', '$location', function($scope, $location) {
-    $scope.location = $location
-    $scope.organization = 'ONCAM Grandeye'
-
-  }]);
-  
-  app.controller('ioctrl', function($scope) {
-    $scope.organization = "ONVU/ONCAM";
-    $scope.inputs = [
-      {Id:4,IsActive:1,Text:'EVO-12'},
-      {Id:17,IsActive:0,Text:'EVO-180'}
-    ];
-  });
-
-  app.controller('config', function($scope) {
-    // Nothing to do yet...
-  });
-
-
-
-  app.directive('digitalInput', function() { 
-    return {
-      restrict:'A',
-      templateUrl:'digital-input.htm'
-    }; 
-  });
-
-</script>
+<script src="js/app.js"></script>
 
 <script type="text/ng-template" id="ioctrl.htm">
   <p> IO Controller View </p>

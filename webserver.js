@@ -1,6 +1,9 @@
 // Require HTTP server and create server with function handler()
 var http = require('http').createServer(handler);
 
+// For parsing URLs
+var url = require('url')
+
 // Require filesystem module (to actually read web content from the 'public' folder)
 var fs = require('fs');
 
@@ -13,22 +16,40 @@ http.listen(8080);
 // Create the web server
 function handler(req, res) {
   console.log('req: ' + req.url);
+
+  // Using URL to parse the requested URL
+  var path = url.parse(req.url).pathname;
+
   // Should convert URL to lower case to avoid case sensitivity on requests
-  var url = req.url == '/' ? '/index.html'  : req.url;
-  fs.readFile(__dirname + '/public' + url, function(err, data) {
-    if (err) {
+  if (path == '/') {
+    index = fs.readFile(__dirname + '/public/index.html', function(err, data) {
+          return handlerReadFile(res, err, data, 'text/html');
+        });
+  } else if (/\.(js)$/.test(path)) {
+    // Managing route for javascript files
+    index = fs.readFile(__dirname + '/public' + path, function(err, data) {
+          return handlerReadFile(res, err, data, 'text/plain');
+        });
+  } else if (/\.(api)$.test(path)) {
+    // This is the route for the API to allow automated control of the GPIO for
+    // Automated testing.
+    res.writeHead(500, {'Content-Type':'text/html'});
+    return res.end('Server error');
+  } else {
       // Write HTML error
       res.writeHead(404, {'Content-Type':'text/html'});
       return res.end("404 Not Found");
-    }
-    // Write HTML response
-    if (url == '/script.js') {
-      res.writeHead(202, {'Content-Type':'application/javascript'});
-    } else { 
-      res.writeHead(202, {'Content-Type':'text/html'});
-    }
-    res.write(data);
-    return res.end();
-  });
+  }
+}
+
+// function to handle file requests
+function handlerReadFile(res, err, data, contentType) {
+  if (err) {
+    res.writeHead(404, {'Content-Type':'text/html'});
+    return res.end('404 Not Found');
+  }
+  res.writeHead(200, {'Content-Type':contentType});
+  res.write(data);
+  return res.end();
 }
 

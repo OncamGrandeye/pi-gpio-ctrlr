@@ -8,7 +8,13 @@ var url = require('url')
 var fs = require('fs');
 
 // Require socket.io module and pass the http object (server)
-//var io = require('socket.io')(http)
+var io = require('socket.io')(http)
+
+
+var gpio = require('onoff').Gpio;
+
+var pin4 = new gpio(4, 'out');
+var pin17 = new gpio(17, 'in', 'both');
 
 // Listen for incoming connections on tcp port 8080
 http.listen(8080);
@@ -30,7 +36,7 @@ function handler(req, res) {
     index = fs.readFile(__dirname + '/public' + path, function(err, data) {
           return handlerReadFile(res, err, data, 'text/plain');
         });
-  } else if (/\.(api)$.test(path)) {
+  } else if (/\.(api)$/.test(path)) {
     // This is the route for the API to allow automated control of the GPIO for
     // Automated testing.
     res.writeHead(500, {'Content-Type':'text/html'});
@@ -53,3 +59,34 @@ function handlerReadFile(res, err, data, contentType) {
   return res.end();
 }
 
+io.sockets.on('connection', function(socket) {
+  var value = 'open';
+  pin17.watch(function(err, val) {
+    if (err) {
+      console.error('There was an error', err);
+      return;
+    }
+    value = val ? 'closed' : 'open';
+    socket.emit('status', {Id:4,State:value});
+  });
+  socket.on('state', function(data) {
+    console.log(data);
+    value = data.Action;
+    pinValue = Number(value == 'close');
+    pinStatus = pin4.readSync();
+    console.log('PIN: ' + pinStatus + ', Update: ' + pinValue);
+    if (pinValue != pin4.readSync()) {
+      pin4.writeSync(pinValue);
+      console.log('Updated pin state');
+    }
+  });
+});
+
+process.on('SIGINT', function() {
+  // Turn the output pin OFF
+  pin4.writeSync(0);
+  // Free PIN resources
+  pin4.unexport();
+  pin17.unexport();
+  process.exit();
+});

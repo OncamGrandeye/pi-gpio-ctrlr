@@ -12,10 +12,36 @@
 <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.4/angular.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/angular-ui-bootstrap/0.9.0/ui-bootstrap-tpls.min.js"></script>
 <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.4/angular-route.min.js"></script>
+
+<!-- include socket.io client side script -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.0.3/socket.io.js"></script> 
+
 <script src="js/app.js"></script>
+
+<script>
+var socket = io();
+
+window.addEventListener('load', function() {
+  // When the page loads...
+  // Here is where the inputs are iterated...
+  // Handlers for the onclick stuff... yada yada yada
+  var box = document.getElementById('pin4');
+  box.addEventListener('change', function() {
+    socket.emit('state', {Id: 4, Action: this.checked ? 'close' : 'open'});
+  });
+});
+
+socket.on('status', function(data) {
+  var newState = data.State == 'closed';
+  document.getElementById('pin4').checked = newState;
+  socket.emit('state', {Id: 4, Action: newState ? 'close' : 'open' });
+});
+
+</script>
 
 <script type="text/ng-template" id="ioctrl.htm">
   <p> IO Controller View </p>
+  <p><input type="checkbox" id="pin4">Socket Control</p>
   <div ng-repeat="input in inputs" digital-input></div>
 </script>
 

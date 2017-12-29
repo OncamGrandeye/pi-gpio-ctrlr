@@ -31,7 +31,7 @@ var defaultPinData = [
 	{Pin:8,  Type:"UART", Id:14,  Text:""},
 	{Pin:9,  Type:"GND"},
 	{Pin:10, Type:"UART", Id:15,  Text:""},
-	{Pin:11, Type:"GPIO", Id:17,  Text:""},
+	{Pin:11, Type:"GPIO", Id:17,  Text:"", Relay:false},
 	{Pin:12, Type:"GPIO", Id:18,  Text:""},
 	{Pin:13, Type:"GPIO", Id:27,  Text:""},
 	{Pin:14, Type:"GND"},

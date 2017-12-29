@@ -18,6 +18,49 @@
 
 <script src="js/app.js"></script>
 
+<style type="text/css">
+  .gpio-columns {
+    columns: 2;
+  }
+
+  .pin-3V3 {
+    background:#f44336;
+    color: #ffffff;
+  }
+
+  .pin-5V {
+    background:#f44336;
+    color: #ffffff;
+  }
+
+  .pin-GPIO {
+    background: #f0e68c;
+  }
+
+  .pin-I2C {
+    background: #4caf50;
+    color: #ffffff;
+  }
+
+  .pin-SPI {
+    background: #ff9800;
+  }
+
+  .pin-UART {
+    background: #87ceeb;
+  }
+
+  .pin-GND {
+    background: #616161;
+    color: #ffffff;
+  }
+
+  .pin-DNC {
+    background: #000000;
+    color: #ffffff;
+  }
+</style>
+
 <script>
 var socket = io();
 
@@ -42,6 +85,9 @@ socket.on('status', function(data) {
 <script type="text/ng-template" id="ioctrl.htm">
   <p> IO Controller View </p>
   <p> Read {{pins.length}} PINS from server </p>
+  <div class="gpio-columns">
+    <div class="col-xs-6" ng-repeat="pin in pins" gpio-pin></div>
+  </div>
   <p><input type="checkbox" id="pin4">Socket Control</p>
   <div ng-repeat="input in inputs" digital-input></div>
 </script>
@@ -63,6 +109,18 @@ socket.on('status', function(data) {
         {{input.Text}} <!-- {{getInputButton(input).text}} -->
       </button>
     </div></div>
+  </div>
+</script>
+
+<script type="text/ng-template" id="gpio-pin.htm">
+  <div class="panel panel-default">
+    <div class="pin-{{pin.Type}}">
+      [{{pin.Pin}}] {{getGPIO(pin).text}}
+      <input type="checkbox" 
+             ng-show="getGPIO(pin).id !== 0" 
+             ng-disabled="getGPIO(pin).contact" 
+             ng-click="getGPIO(pin).action()">
+    </div>
   </div>
 </script>
 

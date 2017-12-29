@@ -83,6 +83,53 @@ app.controller('ioctrl',['$scope', 'ConfigService', 'AlertService', function($sc
       AlertService.addAlert('danger', 'Could not get PIN congiguration from Raspberry PI');
     }
   );
+
+  $scope.openRelay = function(id) {
+    if (id !== 0) {
+      //socket.io.emit('state', { Id:id, Action:'open' });
+    }
+  };
+
+  $scope.closeRelay = function(id) {
+    if (id !== 0) {
+      //socket.io.emit('state', { Id:id, Action:'close' });
+    }
+  };
+
+  $scope.getGPIO = function(pin) {
+    var gpio = {
+      id:0,
+      text:'',
+      relay:false,
+      contact:false,
+      action:null };
+
+    if (pin.Type === 'GPIO') {
+      gpio.id = pin.Id;
+      if (pin.hasOwnProperty('Relay') && pin.Relay === false) {
+        gpio.contact = true;
+      } else {
+        gpio.relay = true;
+        if (pin.IsActive) {
+          gpio.action = function() { $scope.openRelay(pin.Id); };
+        } else {
+          gpio.action = function() { $scope.closeRelay(pin.Id); };
+        }
+      }
+    }
+
+    if (pin.hasOwnProperty('Text') && pin.Text !== '') {
+      gpio.text = pin.Text;
+    } else if (pin.hasOwnProperty('Id')) {
+      gpio.text = pin.Type + '-' + pin.Id;
+    } else {
+      gpio.text = pin.Type;
+    }
+
+    return gpio;
+  };
+
+
 }]);
 
 app.controller('config', function($scope) {
@@ -97,8 +144,8 @@ app.controller('config', function($scope) {
 app.directive('digitalInput', function() {
   return {restrict:'A',templateUrl:'digital-input.htm'};
 });
-/*
-app.directive('relayOutput', function() {
-  return {restrict:'A':templateUrl:'relay-output.htm'};
+
+app.directive('gpioPin', function() {
+  return {restrict:'A',templateUrl:'gpio-pin.htm'};
 });
-*/
+

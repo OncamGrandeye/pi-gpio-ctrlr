@@ -19,10 +19,14 @@
 <script src="js/app.js"></script>
 
 <style type="text/css">
-  .gpio-columns {
+  .gpio-grid {
     display: grid;
-    grid-template-columns: repeat(2, 200px);
+    grid-template-columns: repeat(2, 175px);
     grid-gap: 2px;
+  }
+
+  .gpio-cell {
+    height: 25px;
   }
 
   .pin-3V3 {
@@ -95,7 +99,7 @@ socket.on('status', function(data) {
 -->
 
 <script type="text/ng-template" id="ioctrl.htm">
-  <div class="gpio-columns">
+  <div class="gpio-grid">
     <div class="col-xs-6" ng-repeat="pin in pins" gpio-pin></div>
   </div>
 </script>
@@ -104,10 +108,10 @@ socket.on('status', function(data) {
 </script>
 
 <script type="text/ng-template" id="gpio-pin.htm">
-  <div class="panel panel-default pin-{{pin.Type}}">
-      <div class="panel-body">
+  <div class="panel panel-default gpio-cell pin-{{pin.Type}}">
+      <div class="panel-body" vertical-align="center">
         <small class="text-muted"><em>[{{pin.Pin}}]</em></small>
-        <span ng-show="getGPIO(pin).relay === false">{{getGPIO(pin).text}}</span>
+        <span class="text-center"  ng-show="getGPIO(pin).relay === false">{{getGPIO(pin).text}}</span>
         <button class="btn btn-default btn-small btn-block"
                type="button" 
                ng-show="getGPIO(pin).relay" 

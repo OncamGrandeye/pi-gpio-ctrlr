@@ -20,7 +20,9 @@
 
 <style type="text/css">
   .gpio-columns {
-    columns: 2;
+    display: grid;
+    grid-template-columns: repeat(2, 200px);
+    grid-gap: 2px;
   }
 
   .pin-3V3 {
@@ -59,8 +61,17 @@
     background: #000000;
     color: #ffffff;
   }
+
+  .pin-open {
+    color: #03a711;
+  }
+
+  .pin-closed {
+    color: #ff4040;
+  }
 </style>
 
+<!--
 <script>
 var socket = io();
 
@@ -81,46 +92,33 @@ socket.on('status', function(data) {
 });
 
 </script>
+-->
 
 <script type="text/ng-template" id="ioctrl.htm">
-  <p> IO Controller View </p>
-  <p> Read {{pins.length}} PINS from server </p>
   <div class="gpio-columns">
     <div class="col-xs-6" ng-repeat="pin in pins" gpio-pin></div>
   </div>
-  <p><input type="checkbox" id="pin4">Socket Control</p>
-  <div ng-repeat="input in inputs" digital-input></div>
 </script>
 
 <script type="text/ng-template" id="digital-input.htm">
-  <b>{{input.Id}}</b> {{input.Text}} IsActive:{{input.IsActive}}
-  <div class="panel panel-default">
-    <div class="panel-heading">
-      Input <small class="pull-right text-muted"><em>{{input.Id}}</em></small>
-    </div>
-    <div class="panel-body"><div>
-      <p align="center"> <!-- ng-show="isConnected()" -->
-        <i class="fa fa-power-off fa-3x" 
-            ng-class="{'input-active':input.IsActive,'input-inactive':input.!IsActive}"></i>
-      </p>
-      <button class="btn btn-default btn-md btn-block"  
-          id="inputButton" type="button" ng-click="getInputButton(input).action()">
-          <!-- ng-show="isConnected()" ng-disabled="!isConnected()" -->
-        {{input.Text}} <!-- {{getInputButton(input).text}} -->
-      </button>
-    </div></div>
-  </div>
 </script>
 
 <script type="text/ng-template" id="gpio-pin.htm">
-  <div class="panel panel-default">
-    <div class="pin-{{pin.Type}}">
-      [{{pin.Pin}}] {{getGPIO(pin).text}}
-      <input type="checkbox" 
-             ng-show="getGPIO(pin).id !== 0" 
-             ng-disabled="getGPIO(pin).contact" 
-             ng-click="getGPIO(pin).action()">
-    </div>
+  <div class="panel panel-default pin-{{pin.Type}}">
+      <div class="panel-body">
+        <small class="text-muted"><em>[{{pin.Pin}}]</em></small>
+        <span ng-show="getGPIO(pin).relay === false">{{getGPIO(pin).text}}</span>
+        <button class="btn btn-default btn-small btn-block"
+               type="button" 
+               ng-show="getGPIO(pin).relay" 
+               ng-click="getGPIO(pin).action()">
+          {{getGPIO(pin).text}}
+        </button>
+        <i class="fa fa-power-off fa-1x pull-right"
+           ng-class="{'pin-open':getGPIO(pin).relay, 'pin-closed':getGPIO(pin).contact}"
+           ng-show="pin.Type === 'GPIO'">
+        </i>
+      </div>
   </div>
 </script>
 
@@ -137,7 +135,7 @@ socket.on('status', function(data) {
   <div class="container">
 
     <!-- Navigation -->
-    <nav class="navbar navbar-default" role="ioctrl" ng-control="navigation">
+    <nav class="navbar navbar-default" role="navitation" ng-control="navctrl">
       <div class="container-fluid">
         <div class="navbar-header">
           <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
@@ -147,17 +145,9 @@ socket.on('status', function(data) {
           </button>
           <a class="navbar-brand" href="#">Raspberry PI I/O Controller</a>
         </div>
-        <ul class="nav navbar-nav">
-        </ul>
     
         <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
           <ul class="nav navbar-nav navbar-right">
-            <li>
-              <button ng-controller="navctrl" ng-click="toggleConnection()" id="connectionButton" class="btn btn-default navbar-btn">
-                {{connectionButtonText()}}
-              </button>
-            </li>
-            <li>&nbsp;&nbsp;</li>
             <li ng-class="{'active': location.path() == '/'}">
               <a href="#"><i class="fa fa-male fa-lg"></i>&nbsp;&nbsp;I/O Controller</a>
             </li>

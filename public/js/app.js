@@ -57,7 +57,11 @@ app.controller('navctrl', ['$scope', '$location', function($scope, $location) {
 }]);
 
 app.controller('ioctrl',['$scope', 'ConfigService', 'AlertService', function($scope, ConfigService, AlertService) {
+
+  var socket = io();
+
   $scope.organization = "ONVU/ONCAM";
+  $scope.pins = [];
   $scope.inputs = [
     {Id:4,IsActive:1,Text:'EVO-12'},
     {Id:17,IsActive:0,Text:'EVO-180'}
@@ -85,14 +89,16 @@ app.controller('ioctrl',['$scope', 'ConfigService', 'AlertService', function($sc
   );
 
   $scope.openRelay = function(id) {
+    console.log('Opening ' + id);
     if (id !== 0) {
-      //socket.io.emit('state', { Id:id, Action:'open' });
+      socket.emit('state', { 'Id':id, 'Action':'open' });
     }
   };
 
   $scope.closeRelay = function(id) {
+    console.log('Closing ' + id);
     if (id !== 0) {
-      //socket.io.emit('state', { Id:id, Action:'close' });
+      socket.emit('state', { 'Id':id, 'Action':'close' });
     }
   };
 
@@ -102,6 +108,7 @@ app.controller('ioctrl',['$scope', 'ConfigService', 'AlertService', function($sc
       text:'',
       relay:false,
       contact:false,
+      isActive:false,
       action:null };
 
     if (pin.Type === 'GPIO') {
@@ -116,6 +123,9 @@ app.controller('ioctrl',['$scope', 'ConfigService', 'AlertService', function($sc
           gpio.action = function() { $scope.closeRelay(pin.Id); };
         }
       }
+      if (pin.hasOwnProperty('IsActive')) {
+        gpio.isActive = pin.IsActive;
+      }
     }
 
     if (pin.hasOwnProperty('Text') && pin.Text !== '') {
@@ -128,6 +138,23 @@ app.controller('ioctrl',['$scope', 'ConfigService', 'AlertService', function($sc
 
     return gpio;
   };
+
+  socket.on('status', function(data) {
+    // Just received a state change in a GPIO pin.
+    var newState = data.State === 'closed';
+
+    // Find the Pin that the update is for
+    for (var key in $scope.pins) {
+      var pin = $scope.pins[key];
+      if (pin.hasOwnProperty('Id')) {
+        if (pin.Id === data.Id) {
+          // Wrap this in the $apply to notify angular of the change
+          $scope.$apply(function() { pin.IsActive = newState });
+          return;
+        }
+      }
+    }
+  });
 
 
 }]);

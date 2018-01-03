@@ -166,15 +166,20 @@ function createPin(data) {
     alert: false
   };
 
-  this.data = data;
-
   if (data.Mode === 'INPUT') {
     options.mode = gpio.INPUT,
     options.alert = true
   }
-  this.gpio = new gpio(data.Id, options);
+
+  // Functions that are passed out to setInterval and gpio.on will not run in
+  // the same context as this pin so 'this' is stored to a local variable pin
+  var pin = this;
+
+  this.data = data;
+  this.gpio = new gpio(data.Id, options);;
+
   if (options.alert) {
-    this.gpio.on('alert', function(level, tick) { this.updatePinState(level); } );
+    this.gpio.on('alert', function(level, tick) { pin.updatePinState(level); });
   }
 
   if (data.Mode !== 'SERVO' ) {
@@ -203,18 +208,19 @@ function createPin(data) {
                         // function.
                         clearInterval(this.servo.timer);
                         this.servo.timer = null;
+                        this.gpio.digitalWrite(0);
                       } else {
                         // Activate the servo by calling a function to update the
                         // servo value on the pin at a regular interval.
                         this.servo.timer = setInterval( function() {
-                              this.gpio.servoWrite(pin.servo.pulseWidth);
-                              this.servo.pulseWidth += pin.servo.increment;
-                              if (this.servo.pulseWidth >= 2000) {
-                                this.servo.increment = -100;
-                              } else if (this.servo.pulseWidth <= 1000) {
-                                this.servo.increment = 100;
+                              pin.gpio.servoWrite(pin.servo.pulseWidth);
+                              pin.servo.pulseWidth += pin.servo.increment;
+                              if (pin.servo.pulseWidth >= 2000) {
+                                pin.servo.increment = -100;
+                              } else if (pin.servo.pulseWidth <= 1000) {
+                                pin.servo.increment = 100;
                               }
-                            }, 1000);
+                            }, 125);
                       }
                       this.updatePinState();
                     };

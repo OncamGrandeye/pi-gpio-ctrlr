@@ -113,7 +113,7 @@ app.controller('ioctrl',['$scope', 'ConfigService', 'AlertService', function($sc
 
     if (pin.Type === 'GPIO') {
       gpio.id = pin.Id;
-      if (pin.hasOwnProperty('Relay') && pin.Relay === false) {
+      if (pin.hasOwnProperty('Mode') && pin.Mode === 'INPUT') {
         gpio.contact = true;
       } else {
         gpio.relay = true;

@@ -10,19 +10,20 @@ var fs = require('fs');
 // Require socket.io module and pass the http object (server)
 var io = require('socket.io')(http)
 
-
-var gpio = require('onoff').Gpio;
+// Using 'pigpio' instead of 'onoff' in order to support servos
+var gpio = require('pigpio').Gpio;
 
 // The 'pins' collections maintains the 'gpio' instances and contain the following elements:
 //      data:     The GPIO data from the configuration
 //      gpio:     The instance of the GPIO object (for control and interrupt handling)
+//      servo:    Use to control a servo (a bit more involved that simple on/off
 var pins = [];
 
 // Pin - Physical PIN on the Raspberry PI
 // Type - The Type of PIN
 // ID - The ID for Programmable PINs
 // Text - The text to display for the PIN
-// Relay - Indicates of the pin is controlled (false) or only monitored (Default is true)
+// Mode - INPUT | OUTPUT | SERVO (for motion)
 var defaultPinData = [
 	{Pin:1,  Type:"3V3"},
 	{Pin:2,  Type:"5V"},
@@ -30,11 +31,11 @@ var defaultPinData = [
 	{Pin:4,  Type:"5V"},
 	{Pin:5,  Type:"I2C", Id:3,    Text:""},
 	{Pin:6,  Type:"GND"},
-	{Pin:7,  Type:"GPIO", Id:4,   Text:"", IsActive:true},
+	{Pin:7,  Type:"GPIO", Id:4,   Text:"Motion", Mode:'SERVO'},
 	{Pin:8,  Type:"UART", Id:14,  Text:""},
 	{Pin:9,  Type:"GND"},
 	{Pin:10, Type:"UART", Id:15,  Text:""},
-	{Pin:11, Type:"GPIO", Id:17,  Text:"", Relay:false},
+	{Pin:11, Type:"GPIO", Id:17,  Text:"Relay Monitor", Mode:'INPUT'},
 	{Pin:12, Type:"GPIO", Id:18,  Text:""},
 	{Pin:13, Type:"GPIO", Id:27,  Text:""},
 	{Pin:14, Type:"GND"},
@@ -69,7 +70,9 @@ var defaultPinData = [
 // Listen for incoming connections on tcp port 8080
 http.listen(8080);
 
-// Create the web server
+/*******************************************************************************
+* The web server request handler function (where the magic happens!).
+*******************************************************************************/
 function handler(req, res) {
   console.log('req: ' + req.url);
 
@@ -94,32 +97,27 @@ function handler(req, res) {
 
   } else if (/\/api\/cmd=/.test(path)) {
 
+    // Convert the parameters after '/api/' into an object
     var action = JSON.parse('{"' + path
                   .replace(/\/api\//, '')
                   .replace(/&/g, '","')
                   .replace(/=/g, '":"') + '"}');
 
+    // The command and GPIO id must be provided
     if (action.hasOwnProperty('cmd') && action.hasOwnProperty('id')) {
       var pin = getGPIO(action.id);
-      if (pin !== null) {
-
+      if (pin !== null && !(pin.data.hasOwnProperty('Mode') && pin.data.Mode === 'INPUT')) {
         switch(action.cmd) {
 
-          case 'open': {
-              writePinState(io.sockets, pin, 0);
-              break;
-           }
-
-          case 'close': {
-              writePinState(io.sockets, pin, 1);
-              break;
-            }
+          case 'open':  { pin.setState(0); break; }
+          case 'close': { pin.setState(1); break; }
 
           default: {
               res.writeHead(500, { 'Content-Type':'text/plain' });
               return res.end('Commnand "' + action.cmd + '" is not supported');
             }
         }
+
         res.writeHead(200, { 'Content-Type':'text/plain' });
         res.write('Command succeeded!');
         return res.end();
@@ -145,7 +143,9 @@ function handler(req, res) {
   }
 }
 
-// function to handle file requests
+/*******************************************************************************
+* Simple file request function
+*******************************************************************************/
 function handlerReadFile(res, err, data, contentType) {
   if (err) {
     res.writeHead(404, {'Content-Type':'text/html'});
@@ -156,22 +156,105 @@ function handlerReadFile(res, err, data, contentType) {
   return res.end();
 }
 
+
+/*******************************************************************************
+* All important pin object used for monitoring and controlling the GPIO
+*******************************************************************************/
+function createPin(data) {
+  var options = {
+    mode: gpio.OUTPUT,
+    alert: false
+  };
+
+  this.data = data;
+
+  if (data.Mode === 'INPUT') {
+    options.mode = gpio.INPUT,
+    options.alert = true
+  }
+  this.gpio = new gpio(data.Id, options);
+  if (options.alert) {
+    this.gpio.on('alert', function(level, tick) { this.updatePinState(level); } );
+  }
+
+  if (data.Mode !== 'SERVO' ) {
+    this.servo = null;
+    this.getState = function() { return this.gpio.digitalRead(); };
+    this.setState = options.mode === gpio.INPUT ?
+          function(value) { console.log('gpio-' + this.data.Id + ' Ignoring request to write to INPUT'); } :
+          function(value) {
+            console.log('gpio-' + this.data.Id + ' write->' + value);
+            this.gpio.digitalWrite(value);
+            this.updatePinState();
+          };
+  } else {
+    this.servo = {
+          timer: null,
+          pulseWidth: 1000,
+          increment: 100
+    };
+    // The state of a servo is determined by the presence of an interval timer
+    this.getState = function() { return Number(this.servo.timer !== null); };
+
+    this.setState = function(value) {
+                      console.log('gpio-' + this.data.Id + ' servo->' + value);
+                      if (value === 0) {
+                        // Deactivate the servo by stoping the call to the timer
+                        // function.
+                        clearInterval(this.servo.timer);
+                        this.servo.timer = null;
+                      } else {
+                        // Activate the servo by calling a function to update the
+                        // servo value on the pin at a regular interval.
+                        this.servo.timer = setInterval( function() {
+                              this.gpio.servoWrite(pin.servo.pulseWidth);
+                              this.servo.pulseWidth += pin.servo.increment;
+                              if (this.servo.pulseWidth >= 2000) {
+                                this.servo.increment = -100;
+                              } else if (this.servo.pulseWidth <= 1000) {
+                                this.servo.increment = 100;
+                              }
+                            }, 1000);
+                      }
+                      this.updatePinState();
+                    };
+  }
+
+  this.updatePinState = function(state, err) {
+    if (err) {
+      console.err('Encountered error', err);
+      return;
+    }
+    if (state == null) {
+      state = this.getState();
+    }
+    this.data.IsActive = (state !== 0);
+    io.sockets.emit('status', { Id: this.data.Id, State: (this.data.IsActive ? 'closed' : 'open') });
+  };
+
+  this.updatePinState(this.getState());
+}
+
+
+/*******************************************************************************
+* Turns off all pins and clears the pins array
+*******************************************************************************/
 function clearGPIO() {
   for (var key in pins) {
     var pin = pins[key];
     if (pin.hasOwnProperty('gpio')) {
-      // Turn output pins off
-      if (pin.output)
-        pin.gpio.writeSync(0);
-
-      // Free the resources for the pin
-      console.log('Release resources for gpio-' + pin.data.Id);
-      pin.gpio.unexport();
+      pin.setState(0);
     }
   }
   pins = [];
 }
 
+
+/*******************************************************************************
+* Loads the pins from the file or the default
+*
+* NOTE: Persistent configuration is not implemented yet
+*******************************************************************************/
 function loadGPIO(socket) {
   if (pins.length === 0) {
 
@@ -182,18 +265,8 @@ function loadGPIO(socket) {
       if (pinConfig.hasOwnProperty('Id')) {
 
         if (pinConfig.Type == 'GPIO') {
-
-          var pin = { data: pinConfig };
-          if (pin.data.hasOwnProperty('Relay') && pin.data.Relay == false) {
-            pin.gpio = new gpio(pin.data.Id, 'in', 'both');
-            pin.gpio.watch(function(err, val) { updatePinStatus(socket, pin, val, err); });
-          } else {
-            pin.gpio = new gpio(pin.data.Id, 'out');
-          }
-
-          pin.data.IsActive = (pin.gpio.readSync() != 0);
-          console.log('Partial {Id: ' + pin.data.Id + ', Type:"' + pin.gpio.direction() + '", IsActive: ' + pin.data.IsActive  + '}');
-
+          var pin = new createPin(pinConfig);
+          console.log('Partial {Id: ' + pin.data.Id + ', Mode:"' + pin.data.Mode + '", IsActive: ' + pin.data.IsActive  + '}');
           pins.push(pin);
         }
       }
@@ -201,6 +274,9 @@ function loadGPIO(socket) {
   }
 }
 
+/*******************************************************************************
+* Gets a GPIO pin from its ID (will return I2C, UART and SPI type pins)
+*******************************************************************************/
 function getGPIO(id) {
   for (var key in pins) {
     pin = pins[key];
@@ -214,60 +290,44 @@ function getGPIO(id) {
   return null;
 }
 
-function writePinState(socket, pin, val) {
-  console.log('gpio-' + pin.data.Id + ' state->' + val);
-  pin.gpio.write(val, function(err) {
-    updatePinStatus(socket, pin, val, err);
-  });
-}
 
-function updatePinStatus(socket, pin, val, err) {
-  if (err) {
-    console.error('There was an error', err);
-    return;
-  }
-  pin.data.IsActive = val != 0;
-  var status = {
-    Id: pin.data.Id,
-    State: pin.data.IsActive ? 'closed' : 'open'
-  };
-  console.log('cmd: "status": data: ' + JSON.stringify(status));
-  socket.emit('status', status);
-};
 
+/*******************************************************************************
+*
+* Handles the incoming socket.io connection to insure the PINS array is loaded
+* and handling socket.io requests to open/close output pins.
+*
+* NOTE: The on 'state' should be more robust to insure requests are made only
+*       on the OUTPUT and SERVO mode pins and change the nomenclature to
+*       'activate/deactivate' instead of 'open/close'.
+*******************************************************************************/
 io.sockets.on('connection', function(socket) {
 
   loadGPIO(socket);
-
-  socket.on('_state', function(data) {
-    console.log(data);
-    value = data.Action;
-    pinValue = Number(value == 'close');
-    pinStatus = pin4.readSync();
-    console.log('PIN: ' + pinStatus + ', Update: ' + pinValue);
-    if (pinValue != pin4.readSync()) {
-      pin4.writeSync(pinValue);
-      console.log('Updated pin state');
-    }
-  });
 
   socket.on('state', function(data) {
     console.log('cmd: "state", data: ' + JSON.stringify(data));
     var pin = getGPIO(data.Id);
     if (pin != null) {
-      pinState = pin.gpio.readSync();
       newState = Number(data.Action === 'close');
-      if (pinState !== newState) {
-        writePinState(socket, pin, newState);
-      } else if (pinState != Number(pin.data.IsActive)) {
-        console.log('gpio-' + pin.data.Id + ' is already ' + (pinState ? 'opened.' : 'closed.'));
-        updatePinStatus(socket, pin, pinState, null);
+      console.log('gpio-' + pin.data.Id + ' ' + pin.getState() + '->' + newState);
+      if (pin.getState() !== newState) {
+        pin.setState(newState);
+      } else if (pin.getState() !== Number(pin.data.IsActive)) {
+        console.log('gpio-' + pin.data.Id + ' is already ' + (pin.data.IsActive ? 'opened.' : 'closed.'));
+        pin.updatePinState(pin.getState());
       }
     }
   });
 
 });
 
+
+/*******************************************************************************
+* This would insure the resources used by 'onoff' were properly free'd but this
+* seems to have no effect when using 'pigpio' (could be that pigpio reuires
+* sudo in order to execute?).
+*******************************************************************************/
 process.on('SIGINT', function() {
   clearGPIO();
   process.exit();

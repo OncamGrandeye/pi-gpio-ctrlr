@@ -74,13 +74,25 @@ http.listen(8080);
 * The web server request handler function (where the magic happens!).
 *******************************************************************************/
 function handler(req, res) {
+
   console.log('req: ' + req.url);
+
+  var method = req.method;
+  var request = req.url.replace(/^[\/]+|[\/]+$/g, '').split('/');
+  try {
+    var input = JSON.parse(req.body);
+  } catch (e) {
+    var input = {};
+  }
+  console.log('{\n\tmethod: ' + method + '\n\trequest: ' + request + '\n\tinput: ' + JSON.stringify(input) + '\n}');
+
 
   // Using URL to parse the requested URL
   var path = url.parse(req.url).pathname;
 
   // Should convert URL to lower case to avoid case sensitivity on requests
   if (path == '/') {
+console.log('length should be 0 ' + request.length);
     index = fs.readFile(__dirname + '/public/index.html', function(err, data) {
           return handlerReadFile(res, err, data, 'text/html');
         });
@@ -89,57 +101,31 @@ function handler(req, res) {
     index = fs.readFile(__dirname + '/public' + path, function(err, data) {
           return handlerReadFile(res, err, data, 'text/plain');
         });
-  } else if (/\.(api)$/.test(path)) {
-    // This is the route for the API to allow automated control of the GPIO for
-    // Automated testing.
-    res.writeHead(500, {'Content-Type':'text/html'});
-    return res.end('Server error');
-
-  } else if (/\/api\/cmd=/.test(path)) {
-
-    // Convert the parameters after '/api/' into an object
-    var action = JSON.parse('{"' + path
-                  .replace(/\/api\//, '')
-                  .replace(/&/g, '","')
-                  .replace(/=/g, '":"') + '"}');
-
-    // The command and GPIO id must be provided
-    if (action.hasOwnProperty('cmd') && action.hasOwnProperty('id')) {
-      var pin = getGPIO(action.id);
-      if (pin !== null && !(pin.data.hasOwnProperty('Mode') && pin.data.Mode === 'INPUT')) {
-        switch(action.cmd) {
-
-          case 'open':  { pin.setState(0); break; }
-          case 'close': { pin.setState(1); break; }
-
-          default: {
-              res.writeHead(500, { 'Content-Type':'text/plain' });
-              return res.end('Commnand "' + action.cmd + '" is not supported');
-            }
-        }
-
-        res.writeHead(200, { 'Content-Type':'text/plain' });
-        res.write('Command succeeded!');
-        return res.end();
-      }
-    }
-
-    res.writeHead(500, {'Content-Type':'text/plain'});
-    return res.end('Command Failed!');
-
-  } else if (path == '/config') {
-
-    console.log(req.method);
-
-    // We will muck around with GET/PUT later...
-    res.writeHead(200, {'Content-Type':'application/json'});
-    res.write(JSON.stringify(defaultPinData));
-    return res.end();
 
   } else {
-      // Write HTML error
-      res.writeHead(404, {'Content-Type':'text/html'});
-      return res.end("404 Not Found");
+
+    switch (request.shift().toLowerCase()) {
+
+      case 'api': {  return onCommand(request.shift(), res);  break; }
+
+      case 'config': {
+        switch (method) {
+          case 'GET': { return onGetConfig(request, res);     break; }
+          case 'POST': {
+            // Update multiple or single
+            break;
+          }
+          // Delete is NOT supported
+        }
+        break;
+      }
+
+      default: {
+        // Write HTML error
+        res.writeHead(404, {'Content-Type':'text/html'});
+        return res.end("404 Not Found");
+      }
+    }
   }
 }
 
@@ -156,11 +142,78 @@ function handlerReadFile(res, err, data, contentType) {
   return res.end();
 }
 
+function onGetConfig(params, res) {
+  var type = params.shift();
+  var id = params.shift();
+  var retVal = [];
+
+  console.log('requesting type: ' + type + ', id: ' + id);
+
+  var pinData = defaultPinData;
+  for (var key in defaultPinData) {
+    var pinConfig = pinData[key];
+    if (pinConfig.hasOwnProperty('Id')) {
+      if (pinConfig.Type === 'GPIO') {
+        var pinConfig = getGPIO(pinConfig.Id).data;
+      }
+      if ((type == null || pinConfig.Type.equalIgnoreCase(type)) &&
+          (id == null || pinConfig.Id.toString() === id)) {
+        retVal.push(pinConfig);
+      }
+    } else if (type == null) {
+      retVal.push(pinConfig);
+    }
+  }
+
+  res.writeHead(200, {'Content-Type':'application/json'});
+  res.write(JSON.stringify(retVal));
+  return res.end();
+}
+
+function onCommand(params, res) {
+  try {
+    var action = JSON.parse('{"' + params
+                  .replace(/&/g, '","')
+                  .replace(/=/g, '":"') + '"}');
+  } catch (e) {
+    var action = {};
+  }
+
+  try {
+    // The command and GPIO id must be provided
+    if (action.hasOwnProperty('cmd') && action.hasOwnProperty('id')) {
+      var pin = getGPIO(action.id);
+      if (pin !== null && !(pin.data.hasOwnProperty('Mode') && pin.data.Mode === 'INPUT')) {
+        switch(action.cmd) {
+
+          case 'open':  { pin.setState(0); break; }
+          case 'close': { pin.setState(1); break; }
+
+          default: { throw 'Commnand "' + action.cmd + '" is not supported'; }
+        }
+
+        res.writeHead(200, { 'Content-Type':'text/plain' });
+        res.write('Command succeeded!');
+        return res.end();
+
+      } else {
+        throw 'Pin does not exist or is defined as INPUT';
+      }
+    } else {
+      throw 'API parameters missing (cmd=<action>&id=<pin-id>';
+    }
+
+  } catch (e) {
+    res.writeHead(500, {'Content-Type':'text/plain'});
+    return res.end(e);
+  }
+}
+
 
 /*******************************************************************************
 * All important pin object used for monitoring and controlling the GPIO
 *******************************************************************************/
-function createPin(data) {
+function Pin(data) {
   var options = {
     mode: gpio.OUTPUT,
     alert: false
@@ -271,7 +324,7 @@ function loadGPIO(socket) {
       if (pinConfig.hasOwnProperty('Id')) {
 
         if (pinConfig.Type == 'GPIO') {
-          var pin = new createPin(pinConfig);
+          var pin = new Pin(pinConfig);
           console.log('Partial {Id: ' + pin.data.Id + ', Mode:"' + pin.data.Mode + '", IsActive: ' + pin.data.IsActive  + '}');
           pins.push(pin);
         }
@@ -338,3 +391,11 @@ process.on('SIGINT', function() {
   clearGPIO();
   process.exit();
 });
+
+
+
+String.prototype.equalIgnoreCase = function(str) {
+  return (str != null
+          && typeof str === 'string'
+          && this.toUpperCase() === str.toUpperCase());
+}

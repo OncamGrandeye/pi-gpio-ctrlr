@@ -25,18 +25,24 @@ Two interfaces are provided for controlling input and reading output; HTTP and W
 
 ### Hardware
 
-* Raspberry Pi 3 Model B or a Raspberry Pi Zero W
-* SD Card suitable for loading Raspbian image
-* Ethernet TP cable, for connecting the Arduino to a switch/router (for Raspberry Pi 3 Model B)
+* Raspberry Pi
+* SD Card (Class 10 with 16GB or higher)
+* WiFi/Ethernet Cable connection for the Raspberry Pi
 * Mouse/Keyboard/HDMI Cable & Monitor (to initially setup the Raspberry Pi)
-* Flat cable (or other cabling preference), for connecting the Arduino to the PACS device. How the actual physical cabling is performed is left for the user to decide. 
-* USB cable, (Type?) for powering the Raspberry Pi.
+* Flat cable (or other cabling preference), for connecting the Raspberry Pi to the device. How the actual physical cabling is performed is left for the user to decide. 
+* Micro USB cable for powering the Raspberry Pi (2.5A or greater).
 
 ### Software
 
+* Raspbian
 * NodeJS
 * pigpio
 * To use the web GUI, a browser which supports both WebSockets RFC6455 and AngularJS is needed (Chrome version 30+ should work fine).
-* There are dependencies to other Arduino libraries, see "Quick Start" for further details.
 
 ## Getting Started
+
+The Test Tool is developed using NodeJS for the Raspberry Pi. (See https://www.w3schools.com/nodejs/nodejs_raspberrypi.asp for setting up the environment)
+
+Installing Node.js on Raspberry Pi
+
+

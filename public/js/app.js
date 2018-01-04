@@ -40,11 +40,23 @@ app.factory('ConfigService', function($http, $location) {
     raspberryPi+= ':' + $location.port();
   }
 
-  return { getPinConfig: function(cbSuccess, cbError) {
-    return $http.get(raspberryPi + '/config', {timeout: 5000})
-        .then(cbSuccess, cbError);
+  return {
+    getPinConfig: function(cbSuccess, cbError) {
+      return $http.get(raspberryPi + '/config', {timeout: 5000})
+          .then(cbSuccess, cbError);
+    },
+
+    getGpioConfig: function(cbSuccess, cbError) {
+      return $http.get(raspberryPi + '/config/gpio', {timeout: 5000})
+          .then(cbSuccess, cbError);
+    },
+    setGpioConfig: function(pinConfig, errorCallback) {
+      return $http.post(raspberryPi + '/config/gpio', pinConfig)
+          .error(errorCallback);
     }
+    //TODO Implement network configuration  
   }
+
 });
 
 
@@ -159,9 +171,48 @@ app.controller('ioctrl',['$scope', 'ConfigService', 'AlertService', function($sc
 
 }]);
 
-app.controller('config', function($scope) {
-  // Nothing to do yet...
-});
+app.controller('config',['$scope', 'ConfigService', 'AlertService', function($scope, ConfigService, AlertService) {
+
+  $scope.pins = [];
+
+  ConfigService.getGpioConfig(
+    // Function to handle successfull call
+    function(response) {
+      if (response.status == 200) {
+        $scope.pins = [];
+        try {
+          JSON.stringify(response.data);
+        } catch (e) {
+          AlertService.addAlert('danger', 'PINS are not well formed JSON: ' + e);
+        }
+
+        for (var key in response.data) {
+          $scope.pins.push(response.data[key]);
+        }
+      }
+    },
+    // Function to handle error
+    function(response) {
+      AlertService.addAlert('danger', 'Could not get PIN congiguration from Raspberry PI');
+    }
+  );
+
+  $scope.setGpioConfig = function() {
+    if ($scope.pins) {
+      // Check that it is at least JSON
+      try {
+        ConfigService.setGpioConfig($scope.pins,
+          function(response) {
+            AlertService.addAlert("danger", "Could not post PIN configuration.");
+          }
+        );
+      } catch(exp) {
+        AlertService.addAlert("danger", "The text is not a valid JSON object.");
+      };
+    }
+  };
+
+}]);
 
 
 

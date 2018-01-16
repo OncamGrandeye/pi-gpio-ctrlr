@@ -16,7 +16,7 @@ var gpio = require('pigpio').Gpio;
 var pins = new Pins(__dirname + '/config/pin-config.json');
 
 // Listen for incoming connections on tcp port 8080
-http.listen(8080);
+http.listen(8080, '0.0.0.0');
 
 
 // Pin - Physical PIN on the Raspberry PI
@@ -75,68 +75,72 @@ var defaultPinData = [
 function Pins(path) {
 
   this.path = path;
-  this.items = [];
+  this.items = {};
 
-  this.getItemById = (id) => {
-    for (var key in this.items) {
-      var item = this.items[key];
-      if (item.data.hasOwnProperty('Id') && item.data.Id === id) {
-        return item;
+  this.has = (id) => { return this.items.hasOwnProperty(id); };
+  this.get = (id) => { return this.items[id]; };
+  this.clear = () => { 
+    this.forEach( (pin) => { pin.setState(0); });
+    this.items = {};
+  };
+
+  this.forEach = (cb) => {
+    for (key in this.items) {
+      if (this.items.hasOwnProperty(key)) {
+        cb(this.items[key]);
       }
     }
-    return null;
-  };
+  }
 
-  this.dataUpdate = (data) => {
-    var pin = this.getItemById(data.Id);
-    if (pin !== null) {
-      pin.data.Mode = data.Mode;
-      pin.data.Text = data.Text;
-    }
-  };
-
-  this.clear = () => {
-    for (var key in this.items) {
-      var pin = this.items[key];
-      if (pin.hasOwnProperty('gpio')) {
-        pin.setState(0);
-      }
-    }
-    this.items = [];
-  };
+  var loading = false;
 
   this.load = (cb) => {
 
-    if (this.items.length === 0) {
+    if (Object.keys(this.items).length === 0) {
 
-      var pinData = defaultPinData;
+      if (loading) {
+        console.log('Waiting for load to finish...');
+        // Set an timer to try loading again in 1/4 second
+        setTimeout( () => { this.load(cb); }, 250);
 
-      fs.readFile(this.path, (err, data) => {
-        if (err) {
-          console.log('Loading default pin data');
-        } else {
-          try {
-            pinData = JSON.parse(data);
-          } catch (e) {
-            console.log('Unable to read configuration');
-          }
-        }
+      } else {
+        var pinData = defaultPinData;
+        loading = true;
 
-        for (var key in pinData) {
-          var pinConfig = pinData[key];
-          if (pinConfig.hasOwnProperty('Id')) {
-            if (pinConfig.Type == 'GPIO') {
-              var pin = new Pin(pinConfig);
-              console.log('Partial {Id: ' + pin.data.Id + ', Mode:"' + pin.data.Mode + '", IsActive: ' + pin.data.IsActive  + '}');
-              this.items.push(pin);
+        console.log('Loading pin data from configuration file...');
+        fs.readFile(this.path, (err, data) => {
+          if (err) {
+            console.log('Loading default pin data');
+          } else {
+            try {
+              pinData = JSON.parse(data);
+            } catch (e) {
+              console.log('Unable to read configuration');
             }
           }
-        }
 
-        cb();
-      });
+          for (var key in pinData) {
+            var pinConfig = pinData[key];
+            if (pinConfig.hasOwnProperty('Id')) {
+              if (pinConfig.Type == 'GPIO') {
+                if (!this.has(pinConfig.Id)) {
+                  var pin = new Pin(pinConfig);
+                  this.items[pin.data.Id] = pin;
+                } else {
+                  console.log('DUPLICATE ITEM FOUND: {Id: ' + pinConfig.Id + ', Mode:"' + pinConfig.Mode + '"}');
+                }
+              }
+            }
+          }
+          loading = false;
+
+          console.log('Pin data read from file!');
+          cb();
+        });
+      }
     } else {
       // Pins are already loaded so callback immediately
+      console.log('Pin data loaded!');
       cb();
     }
   };
@@ -144,10 +148,12 @@ function Pins(path) {
   this.save = (cb) => {
     console.log('Saving PIN data...');
     var pinData = [];
-    for (var key in this.items) {
-      pinData.push(this.items[key].data);
-    }
-    fs.writeFile(this.path, JSON.stringify(pinData, null, 2), cb);
+    this.forEach( (pin) => { pinData.push(pin.data); });
+    try {
+      fs.unlinkSync(this.path);
+    } catch (err) {}
+    fs.writeFileSync(this.path, JSON.stringify(pinData, null, 2));
+    cb();
   };
 
 };
@@ -231,8 +237,7 @@ function onGetConfig(params, res) {
       if (pinData.hasOwnProperty('Id')) {
         if ((type == null || pinData.Type.equalIgnoreCase(type)) &&
             (id == null || pinData.Id.toString() === id)) {
-          var pin = pins.getItemById(pinData.Id);
-          retVal.push(pin !== null ? pin.data : pinData);
+          retVal.push(pins.has(pinData.Id) ? pins.get(pinData.Id).data : pinData);
         }
       } else if (type == null) {
         retVal.push(pinData);
@@ -267,7 +272,16 @@ function onSetConfig(req, body, res) {
   }
 
   for (var key in input) {
-    pins.dataUpdate(input[key]);
+    var newPin = input[key];
+    if (newPin.hasOwnProperty('Id') && pins.has(newPin.Id)) {
+      var pin = pins.get(newPin.Id);
+      pin.data.Mode = newPin.Mode;
+      pin.data.Text = newPin.Text;
+      console.log('UPDATED: ' + JSON.stringify(pin.data));
+    } else {
+      console.log('INPUT item is missing Id or does not identify a GPIO Pin');
+      console.log('    ' + JSON.stringify(newPin));
+    }
   }
 
   pins.save((err) => {
@@ -296,22 +310,26 @@ function onCommand(params, res) {
   try {
     // The command and GPIO id must be provided
     if (action.hasOwnProperty('cmd') && action.hasOwnProperty('id')) {
-      var pin = pins.getItemById(action.id);
-      if (pin !== null && !(pin.data.hasOwnProperty('Mode') && pin.data.Mode === 'INPUT')) {
-        switch(action.cmd) {
+      if (pins.has(action.id)) {
+        var pin = pins.get(action.id);
+        if (!(pin.data.hasOwnProperty('Mode') && pin.data.Mode === 'INPUT')) {
+          switch(action.cmd) {
 
-          case 'open':  { pin.setState(0); break; }
-          case 'close': { pin.setState(1); break; }
+            case 'open':  { pin.setState(0); break; }
+            case 'close': { pin.setState(1); break; }
 
-          default: { throw 'Commnand "' + action.cmd + '" is not supported'; }
+            default: { throw 'Commnand "' + action.cmd + '" is not supported'; }
+          }
+
+          res.writeHead(200, { 'Content-Type':'text/plain' });
+          res.write('Command succeeded!');
+          return res.end();
+
+        } else {
+          throw 'Pin is not defined as INPUT';
         }
-
-        res.writeHead(200, { 'Content-Type':'text/plain' });
-        res.write('Command succeeded!');
-        return res.end();
-
       } else {
-        throw 'Pin does not exist or is defined as INPUT';
+        throw 'Pin does not exist';
       }
     } else {
       throw 'API parameters missing (cmd=<action>&id=<pin-id>';
@@ -328,13 +346,17 @@ function onCommand(params, res) {
 * All important pin object used for monitoring and controlling the GPIO
 *******************************************************************************/
 function Pin(data) {
+console.log('creating pin ' + data.Pin);
+
   var options = {
     mode: gpio.OUTPUT,
+    pullUpDown: gpio.PUD_DOWN,
     alert: false
   };
 
   if (data.Mode === 'INPUT') {
     options.mode = gpio.INPUT,
+    //options.pullUpDown = gpio.PUD_UP,
     options.alert = true
   }
 
@@ -342,70 +364,88 @@ function Pin(data) {
   // the same context as this pin so 'this' is stored to a local variable pin
   var pin = this;
 
-  this.data = data;
-  this.gpio = new gpio(data.Id, options);;
+  pin.data = data;
+  pin.gpio = new gpio(data.Id, options);;
 
   if (options.alert) {
-    this.gpio.on('alert', function(level, tick) { pin.updatePinState(level); });
+    pin.gpio.on('alert',
+          function(level, tick) {
+            console.log('Alert received: { id:' + data.Id + ', level:' + level + ', tick:' + tick + '}');
+            if (options.pullUpDown === gpio.PUD_UP) {
+              level = level ? 0 : 1;
+              console.log('level reversed for pull up pin');
+            }
+            pin.updatePinState(level);
+          });
   }
 
   if (data.Mode !== 'SERVO' ) {
-    this.servo = null;
-    this.getState = function() { return this.gpio.digitalRead(); };
-    this.setState = options.mode === gpio.INPUT ?
-          function(value) { console.log('gpio-' + this.data.Id + ' Ignoring request to write to INPUT'); } :
+    pin.servo = null;
+    pin.getState =
+          function() {
+            retVal = pin.gpio.digitalRead();
+            if (options.pullUpDown === gpio.PUD_UP) {
+              // Reverse the open/closed logic
+              retVal = retVal ? 0 : 1;
+              console.log('state logic reversed for pull up');
+            }
+            return retVal;
+          };
+    pin.setState = options.mode === gpio.INPUT ?
+          function(value) { console.log('gpio-' + pin.data.Id + ' Ignoring request to write to INPUT'); } :
           function(value) {
-            console.log('gpio-' + this.data.Id + ' write->' + value);
-            this.gpio.digitalWrite(value);
-            this.updatePinState();
+            console.log('gpio-' + pin.data.Id + ' write->' + value);
+            pin.gpio.digitalWrite(value);
+            pin.updatePinState();
           };
   } else {
-    this.servo = {
+    pin.servo = {
           timer: null,
-          pulseWidth: 1000,
-          increment: 100
+          pulseWidth: 1100,
+          increment: 50
     };
     // The state of a servo is determined by the presence of an interval timer
-    this.getState = function() { return Number(this.servo.timer !== null); };
+    pin.getState = function() { return Number(pin.servo.timer !== null); };
 
-    this.setState = function(value) {
-                      console.log('gpio-' + this.data.Id + ' servo->' + value);
+    pin.setState = function(value) {
+                      console.log('gpio-' + pin.data.Id + ' servo->' + value);
                       if (value === 0) {
                         // Deactivate the servo by stoping the call to the timer
                         // function.
-                        clearInterval(this.servo.timer);
-                        this.servo.timer = null;
-                        this.gpio.digitalWrite(0);
+                        clearInterval(pin.servo.timer);
+                        pin.servo.timer = null;
+                        pin.gpio.digitalWrite(0);
                       } else {
                         // Activate the servo by calling a function to update the
                         // servo value on the pin at a regular interval.
-                        this.servo.timer = setInterval( function() {
+                        pin.servo.timer = setInterval( () => {
                               pin.gpio.servoWrite(pin.servo.pulseWidth);
                               pin.servo.pulseWidth += pin.servo.increment;
-                              if (pin.servo.pulseWidth >= 2000) {
-                                pin.servo.increment = -100;
-                              } else if (pin.servo.pulseWidth <= 1000) {
-                                pin.servo.increment = 100;
+                              if (pin.servo.pulseWidth >= 2500) {
+                                pin.servo.increment = -50;
+                              } else if (pin.servo.pulseWidth <= 1100) {
+                                pin.servo.increment = 50;
                               }
-                            }, 125);
+                            }, 50);
                       }
-                      this.updatePinState();
+                      pin.updatePinState();
                     };
   }
 
-  this.updatePinState = function(state, err) {
+  pin.updatePinState = function(state, err) {
     if (err) {
       console.err('Encountered error', err);
       return;
     }
     if (state == null) {
-      state = this.getState();
+      state = pin.getState();
     }
-    this.data.IsActive = (state !== 0);
-    io.sockets.emit('status', { Id: this.data.Id, State: (this.data.IsActive ? 'closed' : 'open') });
+    pin.data.IsActive = (state !== 0);
+    console.log('emitting status { Id:' + pin.data.Id + ', State:' + (pin.data.IsActive ? 'closed' : 'open') + ' }');
+    io.sockets.emit('status', { Id: pin.data.Id, State: (pin.data.IsActive ? 'closed' : 'open') });
   };
 
-  this.updatePinState(this.getState());
+  pin.updatePinState(pin.getState());
 }
 
 
@@ -424,8 +464,8 @@ io.sockets.on('connection', function(socket) {
 
   socket.on('state', function(data) {
     console.log('cmd: "state", data: ' + JSON.stringify(data));
-    var pin = pins.getItemById(data.Id);
-    if (pin != null) {
+    if (pins.has(data.Id)) {
+      var pin = pins.get(data.Id);
       newState = Number(data.Action === 'close');
       console.log('gpio-' + pin.data.Id + ' ' + pin.getState() + '->' + newState);
       if (pin.getState() !== newState) {
@@ -449,8 +489,6 @@ process.on('SIGINT', function() {
   pins.clear();
   process.exit();
 });
-
-
 
 String.prototype.equalIgnoreCase = function(str) {
   return (str != null

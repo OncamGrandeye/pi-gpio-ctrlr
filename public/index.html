@@ -66,12 +66,12 @@
     color: #ffffff;
   }
 
-  .pin-open {
-    color: #03a711;
+  .pin-inactive {
+    color: #ff4040;
   }
 
-  .pin-closed {
-    color: #ff4040;
+  .pin-active {
+    color: #03a711;
   }
 </style>
 
@@ -103,6 +103,15 @@ socket.on('status', function(data) {
   <div class="gpio-grid">
     <div class="col-xs-6" ng-repeat="pin in pins" gpio-pin></div>
   </div>
+  <div class="row">
+    <div class="col-md-12">
+      <div ng-controller="AlertCtrl">
+        <alert ng-repeat="alert in alerts" type="alert.type" close="closeAlert($index)">
+            <i class="fa fa-warning"></i> {{alert.msg}}
+        </alert>
+      </div>
+    </div>     
+  </div>
 </script>
 
 <script type="text/ng-template" id="digital-input.htm">
@@ -120,7 +129,7 @@ socket.on('status', function(data) {
           {{getGPIO(pin).text}}
         </button>
         <i class="fa fa-power-off fa-1x pull-right"
-           ng-class="{'pin-open':!getGPIO(pin).isActive, 'pin-closed':getGPIO(pin).isActive}"
+           ng-class="{'pin-inactive':!getGPIO(pin).isActive, 'pin-active':getGPIO(pin).isActive}"
            ng-show="pin.Type === 'GPIO'">
         </i>
       </div>

@@ -31,18 +31,18 @@ var defaultPinData = [
 	{Pin:4,  Type:"5V"},
 	{Pin:5,  Type:"I2C", Id:3,    Text:""},
 	{Pin:6,  Type:"GND"},
-	{Pin:7,  Type:"GPIO", Id:4,   Text:""},
+	{Pin:7,  Type:"GPIO", Id:4,   Text:"Motion Trigger", Mode:"SERVO" },
 	{Pin:8,  Type:"UART", Id:14,  Text:""},
 	{Pin:9,  Type:"GND"},
 	{Pin:10, Type:"UART", Id:15,  Text:""},
-	{Pin:11, Type:"GPIO", Id:17,  Text:""},
-	{Pin:12, Type:"GPIO", Id:18,  Text:""},
-	{Pin:13, Type:"GPIO", Id:27,  Text:""},
+	{Pin:11, Type:"GPIO", Id:17,  Text:"Relay-1"},
+	{Pin:12, Type:"GPIO", Id:18,  Text:"Relay-2"},
+	{Pin:13, Type:"GPIO", Id:27,  Text:"Trigger-1", Mode:"OUTPUT"},
 	{Pin:14, Type:"GND"},
-	{Pin:15, Type:"GPIO", Id:22,  Text:""},
-	{Pin:16, Type:"GPIO", Id:23,  Text:""},
+	{Pin:15, Type:"GPIO", Id:22,  Text:"Reset-1", Mode:"PULSE"},
+	{Pin:16, Type:"GPIO", Id:23,  Text:"Trigger-2", Mode:"OUTPUT"},
 	{Pin:17, Type:"3V3"},
-	{Pin:18, Type:"GPIO", Id:24,  Text:""},
+	{Pin:18, Type:"GPIO", Id:24,  Text:"Reset-2", Mode:"PULSE"},
 	{Pin:19, Type:"SPI", Id:10,   Text:""},
 	{Pin:20, Type:"GND"},
 	{Pin:21, Type:"SPI", Id:9,    Text:""},
@@ -349,17 +349,21 @@ function Pin(data) {
 console.log('creating pin ' + data.Pin);
 
   var options = {
-    mode: gpio.OUTPUT,
+    mode: gpio.INPUT,
     pullUpDown: gpio.PUD_DOWN,
-    alert: false
+    alert: true
   };
 
-  if (data.Mode === 'INPUT') {
-    options.mode = gpio.INPUT,
-    //options.pullUpDown = gpio.PUD_UP,
-    options.alert = true
+  switch (data.Mode) {
+    case 'OUTPUT':
+    case 'PULSE':
+    case 'SERVO': {
+	  options.mode = gpio.OUTPUT;
+	  options.alert = false;	
+      break;
+	}
   }
-
+	  
   // Functions that are passed out to setInterval and gpio.on will not run in
   // the same context as this pin so 'this' is stored to a local variable pin
   var pin = this;
@@ -397,6 +401,7 @@ console.log('creating pin ' + data.Pin);
             console.log('gpio-' + pin.data.Id + ' write->' + value);
             pin.gpio.digitalWrite(value);
             pin.updatePinState();
+            //TODO if this is a PULSE then we need to set a timer to turn the state off...
           };
   } else {
     pin.servo = {
